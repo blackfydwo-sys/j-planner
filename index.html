@@ -9,8 +9,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="J플래너">
-<link rel="manifest" id="manifestLink" href="data:application/manifest+json,{}">
-<link rel="apple-touch-icon" id="touchIcon" href="data:,">
+<link rel="manifest" id="manifestLink" href="manifest.webmanifest">
+<link rel="apple-touch-icon" id="touchIcon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 :root{
@@ -197,6 +198,10 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none}
 .steps li{margin-bottom:6px}
 
 /* 토스트·알람 */
+.installbar{display:flex;align-items:center;gap:8px;margin:12px 14px 0;padding:10px 12px;border-radius:14px;background:#fff4ec;border:1px solid #f1cdb9;font-size:13px;font-weight:600}
+.installbar span{flex:1}
+.installbar .ib-go{height:32px;padding:0 12px;border-radius:9px;background:var(--orange);color:#fff;font-weight:800}
+.installbar .ib-x{width:28px;height:28px;color:var(--sub)}
 .toast{position:fixed;left:50%;bottom:calc(84px + var(--sab));transform:translate(-50%,20px);z-index:120;background:var(--ink);color:#fff;font-size:13.5px;font-weight:600;padding:10px 16px;border-radius:12px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;max-width:88vw;text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .toast.warn{background:#b4432a}
@@ -236,6 +241,7 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none}
     <div class="datetabs" id="dateTabs"></div>
   </div>
 
+  <div class="installbar" id="installBar" hidden><span>📲 홈 화면에 설치하면 앱처럼 쓸 수 있어요</span><button class="ib-go" id="installBtn">앱 설치</button><button class="ib-x" id="installX" aria-label="닫기">✕</button></div>
   <main class="page" id="planPage"></main>
 
   <section class="ov" id="ovPage" hidden>
@@ -379,6 +385,7 @@ function render(){
   $("#planPage").hidden = page !== "plan";
   $("#ovPage").hidden = page !== "overview";
   $("#bottomBar").hidden = page !== "plan";
+  $("#installBar").hidden = !(installEvt && page === "plan" && !isStandalone() && !ls.get("jplanner:installHide", false));
   document.querySelectorAll(".pagetabs button").forEach(b => b.classList.toggle("on", b.dataset.page === page));
   if(page === "plan") renderPlan(); else renderOverview();
   measureSticky();
@@ -713,6 +720,7 @@ function settingsSheet(){
     <div class="setrow"><div class="l"><b>JSON 내보내기</b><small>모든 여행 백업 파일 저장</small></div><button class="mini" id="sExport">내보내기</button></div>
     <div class="setrow"><div class="l"><b>JSON 불러오기</b><small>백업 파일로 전체 데이터 교체</small></div><button class="mini" id="sImport">불러오기</button></div>
     <div class="setrow"><div class="l"><b>전체 일정 캘린더</b><small>현재 여행 일정을 .ics로 저장 (알람 포함)</small></div><button class="mini" id="sIcs">내보내기</button></div>
+    <div class="setrow"><div class="l"><b>홈 화면에 앱 설치</b><small>${isStandalone() ? "이미 앱으로 실행 중이에요" : "아이콘으로 바로 열고, 인터넷 없이도 열려요"}</small></div><button class="mini" id="sInstall">설치</button></div>
     <div class="setrow"><div class="l"><b>전체 초기화</b><small>모든 여행을 지우고 예시만 남겨요</small></div><button class="mini" id="sReset">초기화</button></div>
     <div class="sheet-btns" style="margin-top:14px"><button class="btn sec" data-close>닫기</button></div>`, sh => {
     $("#sTitleSave", sh).onclick = () => { const v = $("#sTitle", sh).value.trim(); if(!v) return toast("제목을 입력해 주세요", true); t.title = v; save(); render(); toast("제목을 바꿨어요"); };
@@ -725,6 +733,7 @@ function settingsSheet(){
     $("#sExport", sh).onclick = () => { download(`J플래너-백업-${todayStr()}.json`, JSON.stringify(S, null, 2), "application/json"); toast("백업 파일을 저장했어요"); };
     $("#sImport", sh).onclick = () => $("#importInput").click();
     $("#sIcs", sh).onclick = () => { const its = sortItems(t.items).filter(i => i.time); if(!its.length) return toast("시간이 있는 일정이 없어요", true); download(`${t.title}.ics`, buildIcs(its, t), "text/calendar"); toast(`${its.length}개 일정을 캘린더 파일로 저장했어요`); };
+    $("#sInstall", sh).onclick = () => { closeSheet(); promptInstall(); };
     $("#sReset", sh).onclick = e => twoTap(e.currentTarget, "한 번 더", () => { S = {trips:[seedTrip()], activeId:null}; S.activeId = S.trips[0].id; selDay = defaultDay(trip()); ovIdx = 0; ls.del(FIRED_KEY); save(); closeSheet(); page = "plan"; render(); toast("초기화했어요"); });
   });
 }
@@ -1037,29 +1046,47 @@ function showAlarm(it){
   setTimeout(() => $("#alarmPop").classList.remove("show"), 20000);
 }
 
-/* ================= PWA 매니페스트 ================= */
+/* ================= PWA (홈 화면 앱) ================= */
+// 앱 아이콘 그리기. 배포본은 같은 그림을 icon-192/512/maskable.png 파일로 함께 올린다
+function drawIcon(size, maskable){
+  const c = document.createElement("canvas"); c.width = c.height = size; const x = c.getContext("2d"), s = size / 192;
+  x.fillStyle = "#1b4b7a"; x.beginPath();
+  if(!maskable && x.roundRect) x.roundRect(0, 0, size, size, 40*s); else x.rect(0, 0, size, size);
+  x.fill();
+  // maskable: 갤럭시 런처가 원·둥근 사각형으로 잘라내므로 꽉 찬 배경 + 가운데 안전 영역에 글자를 둔다
+  const k = maskable ? 0.72 : 1, o = (1 - k) * 96 * s;
+  x.fillStyle = "#fff"; x.font = `800 ${120*s*k}px -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`; x.textAlign = "center"; x.textBaseline = "middle";
+  x.fillText("J", o + 92*s*k, o + 104*s*k);
+  x.fillStyle = "#d9724a"; x.beginPath(); x.arc(o + 146*s*k, o + 50*s*k, 18*s*k, 0, Math.PI*2); x.fill();
+  return c.toDataURL("image/png");
+}
+const isStandalone = () => (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+let installEvt = null;
 function setupPwa(){
-  try{
-    // maskable: 갤럭시 런처가 원·둥근 사각형으로 잘라내므로 꽉 찬 배경 + 가운데 80% 안에 글자를 둔다
-    const icon = (size, maskable) => {
-      const c = document.createElement("canvas"); c.width = c.height = size; const x = c.getContext("2d"), s = size / 192;
-      x.fillStyle = "#1b4b7a"; x.beginPath();
-      if(!maskable && x.roundRect) x.roundRect(0, 0, size, size, 40*s); else x.rect(0, 0, size, size);
-      x.fill();
-      const k = maskable ? 0.72 : 1, o = (1 - k) * 96 * s;
-      x.fillStyle = "#fff"; x.font = `800 ${120*s*k}px -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`; x.textAlign = "center"; x.textBaseline = "middle";
-      x.fillText("J", o + 92*s*k, o + 104*s*k);
-      x.fillStyle = "#d9724a"; x.beginPath(); x.arc(o + 146*s*k, o + 50*s*k, 18*s*k, 0, Math.PI*2); x.fill();
-      return c.toDataURL("image/png");
-    };
-    const i192 = icon(192), i512 = icon(512), m512 = icon(512, true);
-    const start = location.href.split("#")[0];
-    const manifest = {id: start, name:"J플래너", short_name:"J플래너", lang:"ko", start_url: start, scope: start.replace(/[^/]*$/, ""),
-      display:"standalone", orientation:"portrait", background_color:"#f6f8fa", theme_color:"#1b4b7a",
-      icons:[{src:i192, sizes:"192x192", type:"image/png", purpose:"any"}, {src:i512, sizes:"512x512", type:"image/png", purpose:"any"}, {src:m512, sizes:"512x512", type:"image/png", purpose:"maskable"}]};
-    $("#manifestLink").href = "data:application/manifest+json;charset=utf-8," + encodeURIComponent(JSON.stringify(manifest));
-    $("#touchIcon").href = i192;
-  }catch(e){}
+  if(location.protocol === "file:"){
+    // 파일로 열었을 때는 옆에 manifest·아이콘 파일이 없을 수 있으므로 data URI로 대신 넣는다
+    try{
+      const i192 = drawIcon(192), i512 = drawIcon(512), m512 = drawIcon(512, true), start = location.href.split("#")[0];
+      const manifest = {name:"J플래너", short_name:"J플래너", lang:"ko", start_url: start, display:"standalone", background_color:"#f6f8fa", theme_color:"#1b4b7a",
+        icons:[{src:i192, sizes:"192x192", type:"image/png"}, {src:i512, sizes:"512x512", type:"image/png"}, {src:m512, sizes:"512x512", type:"image/png", purpose:"maskable"}]};
+      $("#manifestLink").href = "data:application/manifest+json;charset=utf-8," + encodeURIComponent(JSON.stringify(manifest));
+      $("#touchIcon").href = i192;
+    }catch(e){}
+    return;
+  }
+  if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault(); installEvt = e;
+    if(!isStandalone() && !ls.get("jplanner:installHide", false)) $("#installBar").hidden = page !== "plan";
+  });
+  window.addEventListener("appinstalled", () => { installEvt = null; $("#installBar").hidden = true; toast("홈 화면에 설치했어요"); });
+}
+async function promptInstall(){
+  if(isStandalone()) return toast("이미 앱으로 실행 중이에요");
+  if(!installEvt) return toast("브라우저 메뉴(⋮)의 “앱 설치” 또는 “홈 화면에 추가”를 눌러 주세요");
+  installEvt.prompt();
+  try{ await installEvt.userChoice; }catch(e){}
+  installEvt = null; $("#installBar").hidden = true;
 }
 
 /* ================= 이벤트 ================= */
@@ -1109,6 +1136,8 @@ $("#quickDocInput").onchange = async e => {
   if(save()){ renderPlan(); toast(`${files.length}개 파일을 첨부했어요`); }
 };
 $("#helpBtn").onclick = helpSheet;
+$("#installBtn").onclick = promptInstall;
+$("#installX").onclick = () => { $("#installBar").hidden = true; ls.set("jplanner:installHide", true); };
 $("#tripBtn").onclick = tripListSheet;
 $("#newTripBtn").onclick = () => tripSheet(null);
 $("#addItemBtn").onclick = () => itemSheet(null);
