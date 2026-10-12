@@ -49,6 +49,8 @@ input,select,textarea{font:inherit;color:inherit}
 .hero-sub{font-size:13px;opacity:.92}
 .dday{position:absolute;left:18px;top:16px;background:var(--orange);color:#fff;font-weight:800;font-size:13px;border-radius:999px;padding:4px 11px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .cam{position:absolute;right:14px;top:14px;width:38px;height:38px;border-radius:12px;background:rgba(255,255,255,.22);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;font-size:18px}
+.fx{position:absolute;right:60px;top:19px;background:rgba(255,255,255,.22);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-weight:700;font-size:12px;border-radius:999px;padding:5px 10px;white-space:nowrap}
+.fx small{font-size:10px;font-weight:600;opacity:.8;margin-left:4px}
 
 /* 상단 고정 탭 */
 .sticky{position:sticky;top:calc(var(--abh) + var(--sat));z-index:50;background:var(--bg);border-bottom:1px solid var(--line)}
@@ -225,6 +227,7 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none}
 
   <header class="hero" id="hero">
     <span class="dday" id="dday"></span>
+    <span class="fx" title="2026-10-12 기준 고정 환율">₩10,000 ≈ NT$238<small>10/12</small></span>
     <button class="cam" id="camBtn" aria-label="배경 사진 바꾸기">📷</button>
     <div class="hero-in">
       <div class="hero-label" id="heroLabel"></div>
