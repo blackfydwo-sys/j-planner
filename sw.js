@@ -1,5 +1,5 @@
 // J플래너 서비스 워커: 앱 화면은 오프라인에서도 열리게, 새 버전은 온라인일 때 바로 반영되게.
-const CACHE = "jplanner-v2";
+const CACHE = "jplanner-v3";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable.png"];
 const LIBS = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/";
 
